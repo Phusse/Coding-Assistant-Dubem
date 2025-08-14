@@ -37,7 +37,6 @@ The web application provides a user-friendly interface for interacting with the 
     ```bash
     cd frontend
     npm install
-    cd ..
     ```
 
 **Running the Application:**
@@ -54,7 +53,7 @@ You need to run two processes in separate terminals.
     cd frontend
     npm start
     ```
-    This will open the web application in your browser at `http://localhost:3000`.
+    This will open the web application in your browser at `http://localhost:5173`.
 
 ### 2. Command-Line Tool
 
