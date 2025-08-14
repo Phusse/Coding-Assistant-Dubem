@@ -18,7 +18,7 @@ To run this application, you need to have Node.js and npm installed.
     ```
 
 3.  **Start the development server:**
-    This will run the app in development mode. Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+    This will run the app in development mode. Open [http://localhost:5173](http://localhost:5173) to view it in your browser.
     ```bash
     npm start
     ```
