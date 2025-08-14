@@ -1,7 +1,7 @@
 import os
 import time
 import google.generativeai as genai
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
 from google.api_core.exceptions import ResourceExhausted
 
@@ -20,32 +20,34 @@ except ValueError as e:
 DEFAULT_MODEL = "gemini-1.5-pro"
 FALLBACK_MODEL = "gemini-1.5-flash"
 
-def generate_with_retry(prompt, model_name=DEFAULT_MODEL, retries=1):
-    """Try generating content, retry on quota error, switch to fallback model if needed."""
+def stream_response_generator(prompt, retries=1):
+    """
+    Generates content from the model and streams it chunk by chunk,
+    with retry and fallback logic.
+    """
+    model_name = DEFAULT_MODEL
     for attempt in range(retries + 1):
         try:
             model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            return response.text
+            response_stream = model.generate_content(prompt, stream=True)
+
+            # If we get a response, stream it and exit the retry loop
+            yield from (chunk.text for chunk in response_stream if chunk.text)
+            return # Successfully streamed, so exit the generator
+
         except ResourceExhausted as e:
-            # Quota error
-            app.logger.error(f"Quota exceeded on model {model_name}: {e}")
-            if "retry_delay" in str(e):
-                try:
-                    delay_seconds = int(str(e).split("seconds: ")[1].split("\n")[0])
-                    app.logger.info(f"Retrying after {delay_seconds} seconds...")
-                    time.sleep(delay_seconds)
-                except Exception:
-                    time.sleep(5)  # default wait
-            if model_name == DEFAULT_MODEL:
+            app.logger.error(f"Quota exceeded on model {model_name} (attempt {attempt + 1}): {e}")
+            if attempt < retries and model_name == DEFAULT_MODEL:
                 app.logger.info(f"Switching to fallback model {FALLBACK_MODEL}")
                 model_name = FALLBACK_MODEL
+                continue # Go to the next retry attempt
             else:
-                raise
+                yield "The service is currently busy. Please try again later."
+                return
         except Exception as e:
-            app.logger.error(f"An error occurred with model {model_name}: {e}")
-            raise
-    return None
+            app.logger.error(f"An unexpected error occurred during streaming: {e}")
+            yield "An error occurred while generating the response."
+            return
 
 @app.route('/api/prompt', methods=['POST'])
 def handle_prompt():
@@ -58,14 +60,7 @@ def handle_prompt():
     if not prompt:
         return jsonify({"error": "No prompt provided"}), 400
 
-    try:
-        result = generate_with_retry(prompt, retries=2)
-        if result is None:
-            return jsonify({"error": "Failed after retries"}), 500
-        return jsonify({"response": result})
-    except Exception as e:
-        app.logger.error(f"Final error: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+    return Response(stream_with_context(stream_response_generator(prompt, retries=1)), mimetype='text/plain')
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

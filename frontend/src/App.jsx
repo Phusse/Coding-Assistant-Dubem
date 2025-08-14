@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import './App.css';
 
 // Simple spinner component
@@ -14,6 +14,15 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const responseRef = useRef(null);
+  const responseEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    responseEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [response]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -36,12 +45,25 @@ function App() {
       });
 
       if (!apiResponse.ok) {
+        // If the response is not OK, it's likely not a stream.
+        // Try to parse it as JSON for an error message.
         const errorData = await apiResponse.json().catch(() => null);
-        throw new Error(errorData?.error || apiResponse.statusText);
+        throw new Error(errorData?.error || `HTTP error! status: ${apiResponse.status}`);
       }
 
-      const data = await apiResponse.json();
-      setResponse(data.response);
+      // Handle the streaming response
+      const reader = apiResponse.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        const chunk = decoder.decode(value, { stream: true });
+        setResponse((prev) => prev + chunk);
+      }
+
     } catch (err) {
       setError(err.message || 'An unexpected error occurred.');
     } finally {
@@ -81,7 +103,7 @@ function App() {
         {error && <div className="error-message">{error}</div>}
 
         <div className="response-container">
-          {isLoading && <Spinner />}
+          {isLoading && !response && <Spinner />}
           {response && (
             <div className="response-area">
               <div className="response-header">
@@ -90,6 +112,7 @@ function App() {
               </div>
               <div className="response-content" ref={responseRef}>
                 <pre>{response}</pre>
+                <div ref={responseEndRef} />
               </div>
             </div>
           )}
